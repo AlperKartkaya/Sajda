@@ -18,21 +18,6 @@ class DiyanetLookup {
     // Dictionary of province name -> (date -> prayer times)
     private var provinceTimes: [String: [String: DiyanetPrayerTimes]] = [:]
     
-    // All 81 Turkish provinces (uppercase, Turkish characters)
-    private let turkishProvinces: Set<String> = [
-        "ADANA", "ADIYAMAN", "AFYONKARAHISAR", "AKSARAY", "AMASYA", "ANKARA", "ANTALYA",
-        "ARDAHAN", "ARTVIN", "AYDIN", "AGRI", "BALIKESIR", "BARTIN", "BATMAN", "BAYBURT",
-        "BILECIK", "BINGOL", "BITLIS", "BOLU", "BURDUR", "BURSA", "CANAKKALE", "CANKIRI",
-        "CORUM", "DENIZLI", "DIYARBAKIR", "DUZCE", "EDIRNE", "ELAZIG", "ERZINCAN", "ERZURUM",
-        "ESKISEHIR", "GAZIANTEP", "GIRESUN", "GUMUSHANE", "HAKKARI", "HATAY", "IGDIR",
-        "ISPARTA", "ISTANBUL", "IZMIR", "KAHRAMANMARAS", "KARABUK", "KARAMAN", "KARS",
-        "KASTAMONU", "KAYSERI", "KIRIKKALE", "KIRKLARELI", "KIRSEHIR", "KILIS", "KOCAELI",
-        "KONYA", "KUTAHYA", "MALATYA", "MANISA", "MARDIN", "MERSIN", "MUGLA", "MUS",
-        "NEVSEHIR", "NIGDE", "ORDU", "OSMANIYE", "RIZE", "SAKARYA", "SAMSUN", "SIIRT",
-        "SINOP", "SIVAS", "SANLIURFA", "SIRNAK", "TEKIRDAG", "TOKAT", "TRABZON", "TUNCELI",
-        "USAK", "VAN", "YALOVA", "YOZGAT", "ZONGULDAK"
-    ]
-    
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "MM-dd"  // Ignore year - prayer times are same for any year
@@ -58,25 +43,23 @@ class DiyanetLookup {
         }
     }
     
-    /// Find matching province for a location name
-    private func findProvince(for locationName: String) -> String? {
-        let upperLocation = locationName.uppercased(with: Locale(identifier: "en_US"))
-        
-        // Direct match
-        if turkishProvinces.contains(upperLocation) {
-            return upperLocation
-        }
-        
-        // Check if location contains a province name
-        for province in turkishProvinces {
-            if upperLocation.contains(province) || province.contains(upperLocation) {
-                return province
-            }
-        }
-        
-        return nil
+    private func normalized(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .replacingOccurrences(of: "ı", with: "i")
     }
-    
+
+    /// Exact matching keeps unsupported cities and partial queries out of the lookup.
+    func findProvince(for locationName: String) -> String? {
+        let name = normalized(locationName)
+        return provinceTimes.keys.first { normalized($0) == name }
+    }
+
+    func provinces(matching query: String) -> [String] {
+        let query = normalized(query)
+        return supportedProvinces.filter { query.isEmpty || normalized($0).contains(query) }
+    }
+
     /// Returns prayer times for a Turkish province on the given date
     func getPrayerTimes(for date: Date, locationName: String, timezone: TimeZone) -> [String: Date]? {
         guard let province = findProvince(for: locationName),
@@ -128,6 +111,7 @@ class DiyanetLookup {
     
     /// List of all supported provinces
     var supportedProvinces: [String] {
-        Array(turkishProvinces).sorted()
+        provinceTimes.keys.map { $0.capitalized(with: Locale(identifier: "tr_TR")) }
+            .sorted { $0.compare($1, locale: Locale(identifier: "tr_TR")) == .orderedAscending }
     }
 }

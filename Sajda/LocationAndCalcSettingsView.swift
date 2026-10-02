@@ -39,7 +39,7 @@ struct LocationAndCalcSettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Group {
                             Text("Calculation").font(.caption).foregroundColor(Color("SecondaryTextColor"))
-                            HStack { Text("Method").font(.subheadline); Spacer(); Picker("", selection: $vm.method) { ForEach(SajdaCalculationMethod.allCases) { method in Text(method.name).tag(method) } }.frame(maxWidth: 140) }
+                            HStack { Text("Method").font(.subheadline); Spacer(); Picker("", selection: $vm.method) { ForEach(SajdaCalculationMethod.allCases) { method in Text(method.name).tag(method) } }.frame(maxWidth: 140).disabled(vm.isUsingProvinceLocation).help("İl seçimi Diyanet JSON vakitlerini kullanır. Diğer yöntemler için otomatik konum kullanın.") }
                             HStack { Text("Time Correction").font(.subheadline); Spacer(); Button("Adjust") { navigationModel.showView(Self.id, animation: vm.forwardAnimation()) { PrayerTimeCorrectionView() } }.buttonStyle(.bordered) }
                             StyledToggle(label: "Hanafi Madhhab (for Asr)", isOn: $vm.useHanafiMadhhab)
                         }

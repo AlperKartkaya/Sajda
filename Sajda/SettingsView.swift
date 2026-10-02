@@ -11,6 +11,7 @@ struct SettingsView: View {
     @EnvironmentObject var navigationModel: NavigationModel
     
     @State private var isHeaderHovering = false
+    @State private var isLocationHovering = false
     @State private var isCalcHovering = false
     @State private var isNotifHovering = false
 
@@ -37,6 +38,24 @@ struct SettingsView: View {
                     .fill(Color("DividerColor"))
                     .frame(height: 0.5)
                     .padding(.horizontal, 12)
+
+                Button(action: {
+                    navigationModel.showView(Self.id, animation: vm.forwardAnimation()) {
+                        ManualLocationView(isModal: false, parentNavigationID: Self.id)
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "location.fill")
+                        Text("Konum seç").font(.subheadline)
+                        Spacer()
+                        Text(vm.locationStatusText).font(.caption).foregroundColor(.secondary).lineLimit(1)
+                        Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 5).padding(.horizontal, 8)
+                    .background(isLocationHovering ? Color("HoverColor") : .clear).cornerRadius(5)
+                }
+                .buttonStyle(.plain).padding(.horizontal, 5)
+                .onHover { isLocationHovering = $0 }
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Display").font(.caption).foregroundColor(Color("SecondaryTextColor"))

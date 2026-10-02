@@ -1,38 +1,29 @@
 // MARK: - GANTI SELURUH FILE: ManualLocationSheetView.swift (SOLUSI LAYOUT FINAL)
 
 import SwiftUI
-import MapKit
 
 struct ManualLocationSheetView: View {
     @EnvironmentObject var vm: PrayerTimeViewModel
     @Environment(\.dismiss) var dismiss
 
-    @State private var hoveringResult: UUID?
+    @State private var hoveringResult: String?
 
     var body: some View {
         VStack(spacing: 16) {
             
             VStack {
-                Text("Set Location Manually")
+                Text("Konum seç")
                     .font(.headline)
-                Text("Start typing a city or paste coordinates.")
+                Text("Türkiye illeri — internet bağlantısı gerekmez.")
                     .font(.subheadline)
                     .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.top, 8)
 
-            TextField("Search for a city or paste coordinates...", text: $vm.locationSearchQuery)
+            TextField("İl ara...", text: $vm.locationSearchQuery)
                 .textFieldStyle(.roundedBorder)
             
-            if vm.isLocationSearching {
-                // --- KUNCI PERBAIKAN 1 ---
-                // Bungkus dalam VStack dengan Spacer agar tetap di atas.
-                VStack {
-                    ProgressView()
-                        .padding(.top, 20)
-                    Spacer()
-                }
-            } else if vm.locationSearchResults.isEmpty {
+            if vm.locationSearchResults.isEmpty {
                 // --- KUNCI PERBAIKAN 2 ---
                 // Bungkus dalam VStack dengan Spacer agar tetap di atas.
                 VStack {
@@ -47,26 +38,26 @@ struct ManualLocationSheetView: View {
                 // sehingga ia akan mengisi sisa ruang secara otomatis.
                 ScrollView {
                     VStack(spacing: 2) {
-                        ForEach(vm.locationSearchResults) { result in
+                        ForEach(vm.locationSearchResults, id: \.self) { province in
                             Button(action: {
-                                vm.setManualLocation(city: result.name, coordinates: result.coordinates)
+                                vm.setManualProvince(province)
                                 dismiss()
                             }) {
                                 HStack {
                                     VStack(alignment: .leading) {
-                                        Text(result.name).fontWeight(.semibold)
-                                        Text(result.country).font(.caption).foregroundColor(Color("SecondaryTextColor"))
+                                        Text(province).fontWeight(.semibold)
+                                        Text("Türkiye").font(.caption).foregroundColor(Color("SecondaryTextColor"))
                                     }
                                     Spacer()
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .background(hoveringResult == result.id ? Color("HoverColor") : Color.clear)
+                                .background(hoveringResult == province ? Color("HoverColor") : Color.clear)
                                 .cornerRadius(5)
                             }
                             .buttonStyle(.plain)
                             .onHover { isHovering in
-                                hoveringResult = isHovering ? result.id : nil
+                                hoveringResult = isHovering ? province : nil
                             }
                         }
                     }
@@ -83,7 +74,6 @@ struct ManualLocationSheetView: View {
                 }
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: vm.isLocationSearching)
         .animation(.easeInOut, value: vm.locationSearchResults.count)
         .onDisappear {
             vm.locationSearchQuery = ""

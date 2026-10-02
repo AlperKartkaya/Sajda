@@ -23,7 +23,7 @@ Sajda is designed to be simple on the surface but powerful and deeply customizab
 
 #### 🕌 Accurate & Flexible Prayer Times
 *   **Smart Location:** Automatically detects your location for precise prayer times.
-*   **Manual Location:** Search for and set any city in the world, or input latitude/longitude coordinates directly.
+*   **Offline Province Selection:** Start with Diyanet and İstanbul. Use **Konum seç** at the top of Settings to search the 81 provinces in bundled `TurkeyPrayerTimes.json`, without internet. Turkish and ASCII spellings (İstanbul/Istanbul, Iğdır/Igdir) both work. Province selection uses Diyanet times; other calculation methods require automatic location.
 *   **Trusted Calculation Methods:** Choose from a wide range of standard methods (MWL, ISNA, Umm al-Qura, Kemenag, Diyanet, etc.).
 *   **Hanafi Madhhab:** A dedicated toggle to adjust the Asr prayer time.
 *   **Precision Time Correction:** Manually adjust *each* of the five daily prayers (+/- 60 minutes) to perfectly match your local mosque.

@@ -8,22 +8,6 @@ import SwiftUI
 import AppKit
 import NavigationStack
 
-@propertyWrapper
-struct FlexibleDouble: Codable, Equatable, Hashable {
-    var wrappedValue: Double
-    init(wrappedValue: Double) { self.wrappedValue = wrappedValue }
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let doubleValue = try? container.decode(Double.self) {
-            wrappedValue = doubleValue
-        } else if let stringValue = try? container.decode(String.self), let doubleValue = Double(stringValue) {
-            wrappedValue = doubleValue
-        } else {
-            throw DecodingError.typeMismatch(Double.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Expected Double or String representing Double"))
-        }
-    }
-}
-
 class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var menuTitle: NSAttributedString = NSAttributedString(string: "Sajda Pro")
     @Published var todayTimes: [String: Date] = [:]
@@ -32,8 +16,7 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
     @Published var locationStatusText: String = "Preparing prayer schedule..."
     @Published var authorizationStatus: CLAuthorizationStatus
     @Published var locationSearchQuery: String = ""
-    @Published var locationSearchResults: [LocationSearchResult] = []
-    @Published var isLocationSearching: Bool = false
+    @Published var locationSearchResults: [String] = []
     @Published var locationInfoText: String = ""
     @Published var isPrayerImminent: Bool = false
     @Published var isRequestingLocation: Bool = false
@@ -50,7 +33,7 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
     @AppStorage("useCompactLayout") var useCompactLayout: Bool = false
     @AppStorage("use24HourFormat") var use24HourFormat: Bool = false { didSet { updateAndDisplayTimes() } }
     @AppStorage("useHanafiMadhhab") var useHanafiMadhhab: Bool = false { didSet { updatePrayerTimes() } }
-    @AppStorage("isUsingManualLocation") var isUsingManualLocation: Bool = false
+    @AppStorage("isUsingManualLocation") var isUsingManualLocation: Bool = true
     @AppStorage("fajrCorrection") var fajrCorrection: Double = 0 { didSet { updatePrayerTimes() } }
     @AppStorage("dhuhrCorrection") var dhuhrCorrection: Double = 0 { didSet { updatePrayerTimes() } }
     @AppStorage("asrCorrection") var asrCorrection: Double = 0 { didSet { updatePrayerTimes() } }
@@ -79,8 +62,8 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
 
 
     override init() {
-        let savedMethodName = UserDefaults.standard.string(forKey: "calculationMethodName") ?? "Muslim World League"
-        self.method = SajdaCalculationMethod.allCases.first { $0.name == savedMethodName } ?? .allCases[0]
+        let savedMethodName = UserDefaults.standard.string(forKey: "calculationMethodName") ?? "Diyanet (Turkey)"
+        self.method = SajdaCalculationMethod.allCases.first { $0.name == savedMethodName } ?? SajdaCalculationMethod.allCases.first { $0.name == "Diyanet (Turkey)" }!
         let savedTextMode = UserDefaults.standard.string(forKey: "menuBarTextMode")
         self.menuBarTextMode = MenuBarTextMode(rawValue: savedTextMode ?? "") ?? .countdown
         self.authorizationStatus = locMgr.authorizationStatus
@@ -106,78 +89,42 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
         }
     }
     
-    private struct NominatimResult: Codable, Hashable {
-        @FlexibleDouble var lat: Double; @FlexibleDouble var lon: Double
-        let display_name: String; let address: NominatimAddress
-    }
-
-    private struct NominatimAddress: Codable, Hashable {
-        let city: String?, town: String?, village: String?, state: String?, county: String?, country: String?
-    }
-    
     private func setupSearchPublisher() {
         $locationSearchQuery
-            .debounce(for: .milliseconds(400), scheduler: RunLoop.main)
             .removeDuplicates()
-            .handleEvents(receiveOutput: { [weak self] query in
-                let trimmedQuery = query.trimmingCharacters(in: .whitespaces)
-                self?.isLocationSearching = !trimmedQuery.isEmpty
-                if trimmedQuery.isEmpty { self?.locationSearchResults = [] }
-            })
-            .flatMap { [weak self] query -> AnyPublisher<[LocationSearchResult], Never> in
-                guard let self = self else { return Just([]).eraseToAnyPublisher() }
-                let trimmedQuery = query.trimmingCharacters(in: .whitespaces)
-                guard !trimmedQuery.isEmpty else { return Just([]).eraseToAnyPublisher() }
-
-                if let coordResult = self.parseCoordinates(from: trimmedQuery) {
-                    return Just([coordResult]).eraseToAnyPublisher()
-                }
-
-                var components = URLComponents(string: "https://nominatim.openstreetmap.org/search")!
-                components.queryItems = [
-                    URLQueryItem(name: "q", value: trimmedQuery),
-                    URLQueryItem(name: "format", value: "json"),
-                    URLQueryItem(name: "addressdetails", value: "1"),
-                    URLQueryItem(name: "accept-language", value: "en"),
-                    URLQueryItem(name: "limit", value: "20")
-                ]
-                guard let url = components.url else { return Just([]).eraseToAnyPublisher() }
-                var request = URLRequest(url: url)
-                request.setValue("Sajda Pro Prayer Times App/1.0", forHTTPHeaderField: "User-Agent")
-
-                return URLSession.shared.dataTaskPublisher(for: request)
-                    .map(\.data)
-                    .decode(type: [NominatimResult].self, decoder: JSONDecoder())
-                    .catch { error -> Just<[NominatimResult]> in
-                        print("🔴 DECODING ERROR: \(error)")
-                        return Just([])
-                    }
-                    .map { results -> [LocationSearchResult] in
-                        let mappedResults = results.compactMap { result -> LocationSearchResult? in
-                            let name = result.address.city ?? result.address.town ?? result.address.village ?? result.address.county ?? result.address.state ?? ""
-                            let country = result.address.country ?? ""
-                            guard !country.isEmpty else { return nil }
-                            let finalName = name.isEmpty ? result.display_name.components(separatedBy: ",")[0] : name
-                            return LocationSearchResult(name: finalName, country: country, coordinates: CLLocationCoordinate2D(latitude: result.lat, longitude: result.lon))
-                        }
-                        let uniqueResults = Array(Set(mappedResults))
-                        return uniqueResults.sorted { $0.name < $1.name }
-                    }
-                    .eraseToAnyPublisher()
-            }
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] results in
-                self?.isLocationSearching = false
-                self?.locationSearchResults = results
+            .sink { [weak self] query in
+                self?.locationSearchResults = DiyanetLookup.shared.provinces(matching: query)
             }
             .store(in: &cancellables)
     }
     
-    private func parseCoordinates(from string: String) -> LocationSearchResult? { let cleaned = string.replacingOccurrences(of: " ", with: ""); let components = cleaned.split(separator: ",").compactMap { Double($0) }; guard components.count == 2, let lat = components.first, let lon = components.last, (lat >= -90 && lat <= 90) && (lon >= -180 && lon <= 180) else { return nil }; return LocationSearchResult(name: "Custom Coordinate", country: String(format: "%.4f, %.4f", lat, lon), coordinates: CLLocationCoordinate2D(latitude: lat, longitude: lon)) }
-    func setManualLocation(city: String, coordinates: CLLocationCoordinate2D) { let location = CLLocation(latitude: coordinates.latitude, longitude: coordinates.longitude); self.locationTimeZone = TimeZoneLocate.timeZoneWithLocation(location); var locationNameToSave = city; if city == "Custom Coordinate" { let geocoder = CLGeocoder(); geocoder.reverseGeocodeLocation(location) { (placemarks, _) in if let placemark = placemarks?.first, let cityName = placemark.locality { locationNameToSave = cityName; self.locationStatusText = cityName; let manualData: [String: Any] = ["name": locationNameToSave, "latitude": coordinates.latitude, "longitude": coordinates.longitude]; UserDefaults.standard.set(manualData, forKey: "manualLocationData") } else { self.locationStatusText = String(format: "Coord: %.2f, %.2f", coordinates.latitude, coordinates.longitude) } } } else { self.locationStatusText = city }; let manualLocationData: [String: Any] = ["name": locationNameToSave, "latitude": coordinates.latitude, "longitude": coordinates.longitude]; UserDefaults.standard.set(manualLocationData, forKey: "manualLocationData"); isUsingManualLocation = true; currentCoordinates = coordinates; authorizationStatus = .authorized; locationSearchQuery = ""; locationSearchResults = []; updateAndDisplayTimes() }
+    func setManualProvince(_ name: String) {
+        guard let province = DiyanetLookup.shared.findProvince(for: name) else { return }
+        locationStatusText = province.capitalized(with: Locale(identifier: "tr_TR"))
+        UserDefaults.standard.set(locationStatusText, forKey: "selectedProvince")
+        isUsingManualLocation = true
+        currentCoordinates = nil
+        locationTimeZone = TimeZone(identifier: "Europe/Istanbul")!
+        authorizationStatus = .authorized
+        if method.name != "Diyanet (Turkey)" {
+            method = SajdaCalculationMethod.allCases.first { $0.name == "Diyanet (Turkey)" }!
+        }
+        locationSearchQuery = ""
+        updateAndDisplayTimes()
+    }
+
+    var isUsingProvinceLocation: Bool { isUsingManualLocation && currentCoordinates == nil }
     
     func startLocationProcess() {
-        if isUsingManualLocation, let manualData = loadManualLocation() {
+        if isUsingManualLocation,
+           let province = UserDefaults.standard.string(forKey: "selectedProvince") {
+            if DiyanetLookup.shared.hasData(for: province) {
+                setManualProvince(province)
+            } else {
+                clearPrayerTimes()
+                locationStatusText = "Lütfen il seçin."
+            }
+        } else if isUsingManualLocation, let manualData = loadManualLocation() {
             currentCoordinates = manualData.coordinates
             locationStatusText = manualData.name
             let location = CLLocation(latitude: manualData.coordinates.latitude, longitude: manualData.coordinates.longitude)
@@ -186,6 +133,8 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
             DispatchQueue.main.async {
                 self.updateAndDisplayTimes()
             }
+        } else if isUsingManualLocation {
+            setManualProvince("İstanbul")
         } else {
             self.locationTimeZone = .current
             handleAuthorizationStatus(status: locMgr.authorizationStatus)
@@ -193,23 +142,29 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
     }
     
     private func loadManualLocation() -> (name: String, coordinates: CLLocationCoordinate2D)? { guard let data = UserDefaults.standard.dictionary(forKey: "manualLocationData"), let name = data["name"] as? String, let lat = data["latitude"] as? CLLocationDegrees, let lon = data["longitude"] as? CLLocationDegrees else { return nil }; return (name, CLLocationCoordinate2D(latitude: lat, longitude: lon)) }
-    func switchToAutomaticLocation() { isUsingManualLocation = false; UserDefaults.standard.removeObject(forKey: "manualLocationData"); if let cache = automaticLocationCache { currentCoordinates = cache.coordinates; locationStatusText = cache.name; updateAndDisplayTimes() } else { handleAuthorizationStatus(status: locMgr.authorizationStatus) } }
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locs: [CLLocation]) { guard let location = locs.last else { return }; let geocoder = CLGeocoder(); geocoder.reverseGeocodeLocation(location) { (placemarks, _) in DispatchQueue.main.async { guard let locality = placemarks?.first?.locality else { self.isRequestingLocation = false; return }; self.automaticLocationCache = (name: locality, coordinates: location.coordinate); if !self.isUsingManualLocation { self.currentCoordinates = location.coordinate; self.locationStatusText = locality; self.updateAndDisplayTimes() }; if self.isRequestingLocation { self.isRequestingLocation = false } } } }
+    func switchToAutomaticLocation() {
+        isUsingManualLocation = false
+        clearPrayerTimes()
+        UserDefaults.standard.removeObject(forKey: "manualLocationData")
+        if let cache = automaticLocationCache {
+            currentCoordinates = cache.coordinates
+            locationStatusText = cache.name
+            locationTimeZone = TimeZoneLocate.timeZoneWithLocation(CLLocation(latitude: cache.coordinates.latitude, longitude: cache.coordinates.longitude))
+            updateAndDisplayTimes()
+        } else {
+            handleAuthorizationStatus(status: locMgr.authorizationStatus)
+        }
+    }
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locs: [CLLocation]) { guard let location = locs.last else { return }; let geocoder = CLGeocoder(); geocoder.reverseGeocodeLocation(location) { (placemarks, _) in DispatchQueue.main.async { guard let locality = placemarks?.first?.locality else { self.isRequestingLocation = false; return }; self.automaticLocationCache = (name: locality, coordinates: location.coordinate); if !self.isUsingManualLocation { self.currentCoordinates = location.coordinate; self.locationStatusText = locality; self.locationTimeZone = placemarks?.first?.timeZone ?? TimeZoneLocate.timeZoneWithLocation(location); self.updateAndDisplayTimes() }; if self.isRequestingLocation { self.isRequestingLocation = false } } } }
     private func updateAndDisplayTimes() { updatePrayerTimes(); if isUsingManualLocation { startLocationDisplayTimer() } else { stopLocationDisplayTimer() } }
     
     func updatePrayerTimes() {
-        guard let coord = currentCoordinates else { return }
-        
         lastCalculationDate = Date()
         
         var locationCalendar = Calendar(identifier: .gregorian); locationCalendar.timeZone = self.locationTimeZone
         let todayInLocation = locationCalendar.dateComponents([.year, .month, .day], from: Date())
-        let tomorrowInLocation = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        let tomorrowInLocation = locationCalendar.date(byAdding: .day, value: 1, to: Date())!
         let tomorrowDC = locationCalendar.dateComponents([.year, .month, .day], from: tomorrowInLocation)
-        var params = method.params; params.madhab = self.useHanafiMadhhab ? .hanafi : .shafi
-        guard let prayersToday = PrayerTimes(coordinates: Coordinates(latitude: coord.latitude, longitude: coord.longitude), date: todayInLocation, calculationParameters: params),
-              let prayersTomorrow = PrayerTimes(coordinates: Coordinates(latitude: coord.latitude, longitude: coord.longitude), date: tomorrowDC, calculationParameters: params) else { return }
-        
         // Check if we should use Diyanet lookup for Turkish cities
         let isDiyanet = method.name == "Diyanet (Turkey)"
         let hasDiyanetData = DiyanetLookup.shared.hasData(for: locationStatusText)
@@ -231,44 +186,54 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
                 ("Isha", diyanetTimes["Isha"]!.addingTimeInterval(ishaCorrection * 60))
             ]
             correctedFajrTomorrow = diyanetTomorrowTimes["Fajr"]!.addingTimeInterval(fajrCorrection * 60)
-        } else if isDiyanet {
-            // Diyanet method but not Istanbul - use calculated times with Sunrise (Turkish style)
-            let correctedFajr = prayersToday.fajr.addingTimeInterval(fajrCorrection * 60)
-            let correctedDhuhr = prayersToday.dhuhr.addingTimeInterval(dhuhrCorrection * 60)
-            let correctedAsr = prayersToday.asr.addingTimeInterval(asrCorrection * 60)
-            let correctedMaghrib = prayersToday.maghrib.addingTimeInterval(maghribCorrection * 60)
-            let correctedIsha = prayersToday.isha.addingTimeInterval(ishaCorrection * 60)
-            
-            allPrayerTimes = [
-                ("Fajr", correctedFajr),
-                ("Sunrise", prayersToday.sunrise),
-                ("Dhuhr", correctedDhuhr),
-                ("Asr", correctedAsr),
-                ("Maghrib", correctedMaghrib),
-                ("Isha", correctedIsha)
-            ]
-            correctedFajrTomorrow = prayersTomorrow.fajr.addingTimeInterval(fajrCorrection * 60)
         } else {
-            // Use calculated times with manual corrections
-            let correctedFajr = prayersToday.fajr.addingTimeInterval(fajrCorrection * 60)
-            let correctedDhuhr = prayersToday.dhuhr.addingTimeInterval(dhuhrCorrection * 60)
-            let correctedAsr = prayersToday.asr.addingTimeInterval(asrCorrection * 60)
-            let correctedMaghrib = prayersToday.maghrib.addingTimeInterval(maghribCorrection * 60)
-            let correctedIsha = prayersToday.isha.addingTimeInterval(ishaCorrection * 60)
-            
-            allPrayerTimes = [("Fajr", correctedFajr), ("Dhuhr", correctedDhuhr), ("Asr", correctedAsr), ("Maghrib", correctedMaghrib), ("Isha", correctedIsha)]
-            
-            if showSunnahPrayers {
-                correctedFajrTomorrow = prayersTomorrow.fajr.addingTimeInterval(fajrCorrection * 60)
-                let nightDuration = correctedFajrTomorrow.timeIntervalSince(correctedIsha)
-                let lastThirdOfNightStart = correctedIsha.addingTimeInterval(nightDuration * (2/3.0))
-                allPrayerTimes.append(("Tahajud", lastThirdOfNightStart))
-                
-                let dhuhaTime = prayersToday.sunrise.addingTimeInterval(20 * 60)
-                allPrayerTimes.append(("Dhuha", dhuhaTime))
+            guard let coord = currentCoordinates else {
+                clearPrayerTimes()
+                return
             }
+            var params = method.params; params.madhab = self.useHanafiMadhhab ? .hanafi : .shafi
+            guard let prayersToday = PrayerTimes(coordinates: Coordinates(latitude: coord.latitude, longitude: coord.longitude), date: todayInLocation, calculationParameters: params),
+                  let prayersTomorrow = PrayerTimes(coordinates: Coordinates(latitude: coord.latitude, longitude: coord.longitude), date: tomorrowDC, calculationParameters: params) else { return }
+
+            if isDiyanet {
+                // Unsupported automatic locations use calculated times with Sunrise.
+                let correctedFajr = prayersToday.fajr.addingTimeInterval(fajrCorrection * 60)
+                let correctedDhuhr = prayersToday.dhuhr.addingTimeInterval(dhuhrCorrection * 60)
+                let correctedAsr = prayersToday.asr.addingTimeInterval(asrCorrection * 60)
+                let correctedMaghrib = prayersToday.maghrib.addingTimeInterval(maghribCorrection * 60)
+                let correctedIsha = prayersToday.isha.addingTimeInterval(ishaCorrection * 60)
             
-            correctedFajrTomorrow = prayersTomorrow.fajr.addingTimeInterval(fajrCorrection * 60)
+                allPrayerTimes = [
+                    ("Fajr", correctedFajr),
+                    ("Sunrise", prayersToday.sunrise),
+                    ("Dhuhr", correctedDhuhr),
+                    ("Asr", correctedAsr),
+                    ("Maghrib", correctedMaghrib),
+                    ("Isha", correctedIsha)
+                ]
+                correctedFajrTomorrow = prayersTomorrow.fajr.addingTimeInterval(fajrCorrection * 60)
+            } else {
+                // Use calculated times with manual corrections
+                let correctedFajr = prayersToday.fajr.addingTimeInterval(fajrCorrection * 60)
+                let correctedDhuhr = prayersToday.dhuhr.addingTimeInterval(dhuhrCorrection * 60)
+                let correctedAsr = prayersToday.asr.addingTimeInterval(asrCorrection * 60)
+                let correctedMaghrib = prayersToday.maghrib.addingTimeInterval(maghribCorrection * 60)
+                let correctedIsha = prayersToday.isha.addingTimeInterval(ishaCorrection * 60)
+            
+                allPrayerTimes = [("Fajr", correctedFajr), ("Dhuhr", correctedDhuhr), ("Asr", correctedAsr), ("Maghrib", correctedMaghrib), ("Isha", correctedIsha)]
+
+                if showSunnahPrayers {
+                    correctedFajrTomorrow = prayersTomorrow.fajr.addingTimeInterval(fajrCorrection * 60)
+                    let nightDuration = correctedFajrTomorrow.timeIntervalSince(correctedIsha)
+                    let lastThirdOfNightStart = correctedIsha.addingTimeInterval(nightDuration * (2/3.0))
+                    allPrayerTimes.append(("Tahajud", lastThirdOfNightStart))
+
+                    let dhuhaTime = prayersToday.sunrise.addingTimeInterval(20 * 60)
+                    allPrayerTimes.append(("Dhuha", dhuhaTime))
+                }
+
+                correctedFajrTomorrow = prayersTomorrow.fajr.addingTimeInterval(fajrCorrection * 60)
+            }
         }
         
         DispatchQueue.main.async {
@@ -379,13 +344,19 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
     func selectCustomAdhanSound() { let openPanel = NSOpenPanel(); openPanel.canChooseFiles = true; openPanel.canChooseDirectories = false; openPanel.allowsMultipleSelection = false; openPanel.allowedContentTypes = [.audio]; if openPanel.runModal() == .OK { self.customAdhanSoundPath = openPanel.url?.absoluteString ?? "" } }
     var isPrayerDataAvailable: Bool { !todayTimes.isEmpty }
     
+    func needsPrayerTimeRefresh(at date: Date) -> Bool {
+        guard let lastDate = lastCalculationDate else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = locationTimeZone
+        return !calendar.isDate(lastDate, inSameDayAs: date)
+    }
+
     func startTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            if let lastDate = self.lastCalculationDate,
-               !Calendar.current.isDate(lastDate, inSameDayAs: Date()) {
+            if self.needsPrayerTimeRefresh(at: Date()) {
                 self.updatePrayerTimes()
             } else {
                 self.updateCountdown()
@@ -393,11 +364,40 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
         }
     }
     
-    private func handleAuthorizationStatus(status: CLAuthorizationStatus) { self.authorizationStatus = status; switch status { case .authorized: if automaticLocationCache == nil { locationStatusText = "Fetching Location..." }; locMgr.requestLocation(); case .denied, .restricted: locationStatusText = "Location access denied."; isRequestingLocation = false; todayTimes = [:]; case .notDetermined: isRequestingLocation = false; locationStatusText = "Location access needed"; @unknown default: isRequestingLocation = false; break } }
+    private func clearPrayerTimes() {
+        currentCoordinates = nil
+        todayTimes = [:]
+        tomorrowFajrTime = nil
+        nextPrayerName = ""
+        isPrayerImminent = false
+        updateCountdown()
+        updateNotifications()
+    }
+
+    private func handleAuthorizationStatus(status: CLAuthorizationStatus) {
+        authorizationStatus = status
+        switch status {
+        case .authorized, .authorizedAlways, .authorizedWhenInUse:
+            if automaticLocationCache == nil { locationStatusText = "Fetching Location..." }
+            locMgr.requestLocation()
+        case .denied, .restricted:
+            clearPrayerTimes()
+            locationStatusText = "Location access denied."
+            isRequestingLocation = false
+        case .notDetermined:
+            clearPrayerTimes()
+            isRequestingLocation = false
+            locationStatusText = "Location access needed"
+        @unknown default:
+            isRequestingLocation = false
+        }
+    }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) { if !isUsingManualLocation { handleAuthorizationStatus(status: manager.authorizationStatus) } }
     
     // --- PERBAIKAN TYPO DI SINI ---
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        guard !isUsingManualLocation else { return }
+        clearPrayerTimes()
         self.isRequestingLocation = false
         self.locationStatusText = "Unable to determine location."
     }

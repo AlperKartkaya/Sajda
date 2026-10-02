@@ -1,7 +1,6 @@
 // MARK: - GANTI SELURUH FILE: ManualLocationView.swift
 
 import SwiftUI
-import MapKit
 import NavigationStack
 
 struct ManualLocationView: View {
@@ -9,8 +8,9 @@ struct ManualLocationView: View {
     @EnvironmentObject var navigationModel: NavigationModel
     
     let isModal: Bool
+    var parentNavigationID: String = LocationAndCalcSettingsView.id
     
-    @State private var hoveringResult: UUID?
+    @State private var hoveringResult: String?
     @State private var isHeaderHovering = false
 
     private var viewWidth: CGFloat {
@@ -22,7 +22,7 @@ struct ManualLocationView: View {
             Button(action: handleBackButton) {
                 HStack {
                     Image(systemName: "chevron.left").font(.body.weight(.semibold))
-                    Text(LocalizedStringKey("Set Location")).font(.body).fontWeight(.bold)
+                    Text(LocalizedStringKey("Konum seç")).font(.body).fontWeight(.bold)
                     Spacer()
                 }
                 .padding(.vertical, 5).padding(.horizontal, 8)
@@ -34,41 +34,39 @@ struct ManualLocationView: View {
             
             Divider().padding(.horizontal, 12).drawingGroup()
             
-            TextField(LocalizedStringKey("Search for a city or paste coordinates..."), text: $vm.locationSearchQuery)
+            TextField(LocalizedStringKey("İl ara..."), text: $vm.locationSearchQuery)
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal, 12)
             
             ScrollView {
-                if vm.isLocationSearching {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                } else {
-                    VStack(spacing: 2) {
-                        ForEach(vm.locationSearchResults) { result in
-                            Button(action: {
-                                vm.setManualLocation(city: result.name, coordinates: result.coordinates)
-                                handleBackButton()
-                            }) {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(result.name).fontWeight(.semibold)
-                                        Text(result.country).font(.caption).foregroundColor(Color("SecondaryTextColor"))
-                                    }
-                                    Spacer()
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .background(hoveringResult == result.id ? Color("HoverColor") : Color.clear)
-                                .cornerRadius(5)
-                            }
-                            .buttonStyle(.plain)
-                            .onHover { isHovering in hoveringResult = isHovering ? result.id : nil }
-                        }
-                    }
-                    .padding(.horizontal, 12)
+                if vm.locationSearchResults.isEmpty {
+                    Text("Sonuç bulunamadı.").foregroundColor(.secondary).padding()
                 }
+                VStack(spacing: 2) {
+                    ForEach(vm.locationSearchResults, id: \.self) { province in
+                        Button(action: {
+                            vm.setManualProvince(province)
+                            handleBackButton()
+                        }) {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(province).fontWeight(.semibold)
+                                    Text("Türkiye").font(.caption).foregroundColor(Color("SecondaryTextColor"))
+                                }
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                            .background(hoveringResult == province ? Color("HoverColor") : Color.clear)
+                            .cornerRadius(5)
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { isHovering in hoveringResult = isHovering ? province : nil }
+                    }
+                }
+                .padding(.horizontal, 12)
             }
+            .frame(height: 280)
         }
         .padding(.vertical, 8)
         .frame(width: viewWidth)
@@ -81,7 +79,7 @@ struct ManualLocationView: View {
         if isModal {
             navigationModel.hideView(ContentView.id, animation: vm.backwardAnimation())
         } else {
-            navigationModel.hideView(LocationAndCalcSettingsView.id, animation: vm.backwardAnimation())
+            navigationModel.hideView(parentNavigationID, animation: vm.backwardAnimation())
         }
     }
 }
