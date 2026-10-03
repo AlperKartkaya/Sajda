@@ -37,6 +37,38 @@ final class SajdaTests: XCTestCase {
     }
 
     @MainActor
+    func testHourFormatToggleInNormalAndMinimalLayouts() throws {
+        let defaults = UserDefaults.standard
+        let keys = ["use24HourFormat", "useMinimalMenuBarText", "selectedLanguage", "isNotificationsEnabled"]
+        let saved = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+        defer {
+            for key in keys {
+                if let value = saved[key] ?? nil { defaults.set(value, forKey: key) }
+                else { defaults.removeObject(forKey: key) }
+            }
+        }
+        defaults.set("en", forKey: "selectedLanguage")
+        defaults.set(false, forKey: "isNotificationsEnabled")
+        let vm = PrayerTimeViewModel()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = vm.dateFormatter.timeZone
+        let afternoon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 13, minute: 5)))
+        let midnight = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 0, minute: 5)))
+        vm.useMinimalMenuBarText = false
+        vm.use24HourFormat = true
+        XCTAssertEqual(vm.dateFormatter.string(from: afternoon), "13:05")
+        XCTAssertEqual(vm.dateFormatter.string(from: midnight), "00:05")
+        vm.use24HourFormat = false
+        XCTAssertEqual(vm.dateFormatter.string(from: afternoon), "1:05 PM")
+        XCTAssertEqual(vm.dateFormatter.string(from: midnight), "12:05 AM")
+        vm.useMinimalMenuBarText = true
+        vm.use24HourFormat = true
+        XCTAssertEqual(vm.dateFormatter.string(from: afternoon), "13.05")
+        vm.use24HourFormat = false
+        XCTAssertEqual(vm.dateFormatter.string(from: afternoon), "1.05")
+    }
+
+    @MainActor
     func testFreshDefaultsAndOfflineProvincePersistence() throws {
         let defaults = UserDefaults.standard
         let keys = ["calculationMethodName", "isUsingManualLocation", "manualLocationData", "selectedProvince", "isNotificationsEnabled", "fajrCorrection", "dhuhrCorrection", "asrCorrection", "maghribCorrection", "ishaCorrection"]

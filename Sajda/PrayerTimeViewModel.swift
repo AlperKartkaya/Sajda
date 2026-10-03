@@ -319,12 +319,12 @@ class PrayerTimeViewModel: NSObject, ObservableObject, CLLocationManagerDelegate
         if useMinimalMenuBarText {
             formatter.dateFormat = use24HourFormat ? "H.mm" : "h.mm"
         } else {
-            formatter.timeStyle = .short
+            formatter.dateFormat = use24HourFormat ? "HH:mm" : "h:mm a"
         }
         return formatter
     }
     
-    private func startLocationDisplayTimer() { stopLocationDisplayTimer(); locationDisplayTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in guard let self = self else { return }; let timeFormatter = DateFormatter(); timeFormatter.timeZone = self.locationTimeZone; timeFormatter.timeStyle = .medium; let tzName = self.locationTimeZone.identifier; let currentTime = timeFormatter.string(from: Date()); self.locationInfoText = "Timezone: \(tzName) | Current Time: \(currentTime)" } }
+    private func startLocationDisplayTimer() { stopLocationDisplayTimer(); locationDisplayTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in guard let self = self else { return }; let timeFormatter = self.dateFormatter; timeFormatter.dateFormat = self.use24HourFormat ? "HH:mm:ss" : "h:mm:ss a"; let tzName = self.locationTimeZone.identifier; let currentTime = timeFormatter.string(from: Date()); self.locationInfoText = "Timezone: \(tzName) | Current Time: \(currentTime)" } }
     private func stopLocationDisplayTimer() { locationDisplayTimer?.invalidate(); locationDisplayTimer = nil; locationInfoText = "" }
     
     private func updateNotifications() {
